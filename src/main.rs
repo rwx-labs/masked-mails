@@ -1,6 +1,3 @@
-use std::net::SocketAddr;
-
-use axum::{http::StatusCode, response::IntoResponse, Router};
 use clap::Parser;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::{
@@ -12,55 +9,17 @@ use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
 };
 
-use tokio::signal;
-use tower_http::{
-    compression::{CompressionLayer, CompressionLevel},
-    trace::TraceLayer,
-};
-use tracing::{debug, instrument};
+use tracing::debug;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod api;
 mod cli;
 mod database;
 mod error;
+mod http;
 
+pub use database::Database;
 pub use error::Error;
-
-#[derive(Clone)]
-struct AppState {
-    pub database: database::Database,
-}
-
-#[instrument]
-async fn not_found() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "not found")
-}
-
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        () = ctrl_c => {},
-        () = terminate => {},
-    }
-
-    println!("signal received, starting graceful shutdown");
-}
 
 // Create a Resource that captures information about the entity for which telemetry is recorded.
 fn resource() -> Resource {
@@ -99,7 +58,7 @@ async fn main() -> miette::Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "magistr=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "masked_mails=debug,tower_http=debug".into()),
         )
         .with(
             tracing_subscriber::fmt::layer()
@@ -117,22 +76,8 @@ async fn main() -> miette::Result<()> {
     debug!("running database migrations");
     database::migrate(db.clone()).await?;
     debug!("database migrations complete");
-    let app_state = AppState { database: db };
-    let app = Router::new()
-        .fallback(not_found)
-        .layer(TraceLayer::new_for_http())
-        .layer(CompressionLayer::new().quality(CompressionLevel::Fastest))
-        .with_state(app_state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-
-    debug!("listening on {}", addr);
-
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .unwrap();
+    http::start_server(db.clone()).await?;
 
     Ok(())
 }

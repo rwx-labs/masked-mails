@@ -1,5 +1,7 @@
 //! Error types
 
+use std::io;
+
 use miette::Diagnostic;
 use thiserror::Error;
 
@@ -17,4 +19,7 @@ pub enum Error {
 
     #[error("Database query failed")]
     DatabaseQueryFailed(#[from] sqlx::Error),
+
+    #[error("Could not bind port for http server")]
+    HttpBindFailed(#[from] io::Error),
 }
