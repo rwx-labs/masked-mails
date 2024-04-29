@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: 'postgres'
+    ports:
+      - '5432:5432'
+    restart: always
+    environment:
+      - POSTGRES_USER=masked_mails
+      - POSTGRES_DB=masked_mails_development
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
