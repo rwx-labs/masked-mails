@@ -22,6 +22,8 @@ mod http;
 pub use database::Database;
 pub use error::Error;
 
+use crate::auth::Authenticator;
+
 // Create a Resource that captures information about the entity for which telemetry is recorded.
 fn resource() -> Resource {
     Resource::from_schema_url(
@@ -78,7 +80,17 @@ async fn main() -> miette::Result<()> {
     database::migrate(db.clone()).await?;
     debug!("database migrations complete");
 
-    http::start_server(db.clone()).await?;
+    debug!("configuring authenticator");
+    let authenticator = Authenticator::discover(
+        opts.auth_issuer_url,
+        opts.auth_client_id,
+        opts.auth_client_secret,
+        opts.auth_redirect_url,
+    )
+    .await?;
+    debug!("finished configuration authenticator");
+
+    http::start_server(db.clone(), authenticator).await?;
 
     Ok(())
 }

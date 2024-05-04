@@ -25,4 +25,7 @@ pub enum Error {
 
     #[error("Could not delete inactive sessions from database")]
     DeleteSessionsFailed(#[from] tower_sessions::session_store::Error),
+
+    #[error("Could not discover openid client information")]
+    DiscoverOidcFailed,
 }

@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use axum::{http::StatusCode, response::IntoResponse, Router};
+use axum::{extract::FromRef, http::StatusCode, response::IntoResponse, Router};
 use time::Duration;
 use tokio::{signal, task::AbortHandle};
 use tower_http::{
@@ -11,12 +11,14 @@ use tower_sessions::{session_store::ExpiredDeletion, Expiry, SessionManagerLayer
 use tower_sessions_sqlx_store::PostgresStore;
 use tracing::{debug, instrument};
 
-use crate::api;
 use crate::Database;
 use crate::Error;
+use crate::{api, auth::Authenticator};
 
-#[derive(Clone)]
-struct State {
+#[derive(Clone, FromRef)]
+pub(crate) struct AppState {
+    pub authenticator: Authenticator,
+    pub session_store: PostgresStore,
     pub database: Database,
 }
 
@@ -52,12 +54,8 @@ async fn shutdown_signal(deletion_task_abort_handle: AbortHandle) {
 }
 
 #[instrument(skip_all)]
-pub async fn start_server(db: Database) -> miette::Result<(), Error> {
+pub async fn start_server(db: Database, authenticator: Authenticator) -> miette::Result<(), Error> {
     debug!("starting http server");
-
-    let app_state = State {
-        database: db.clone(),
-    };
 
     let auth_router = api::auth::router();
     let api_v1_router = api::v1::router();
@@ -65,6 +63,12 @@ pub async fn start_server(db: Database) -> miette::Result<(), Error> {
     // Set up the session layer
     let session_store = PostgresStore::new(db.clone().0);
     session_store.migrate().await?;
+
+    let app_state = AppState {
+        authenticator,
+        session_store: session_store.clone(),
+        database: db.clone(),
+    };
 
     let deletion_task = tokio::task::spawn(
         session_store
@@ -78,8 +82,8 @@ pub async fn start_server(db: Database) -> miette::Result<(), Error> {
 
     let app = Router::new()
         .fallback(not_found)
-        .with_state(app_state)
         .nest("/api/auth", auth_router)
+        .with_state(app_state)
         .nest("/api/v1", api_v1_router)
         .layer(session_layer)
         .layer(TraceLayer::new_for_http())
