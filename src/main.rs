@@ -13,6 +13,7 @@ use tracing::debug;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod api;
+mod auth;
 mod cli;
 mod database;
 mod error;

@@ -22,4 +22,7 @@ pub enum Error {
 
     #[error("Could not bind port for http server")]
     HttpBindFailed(#[from] io::Error),
+
+    #[error("Could not delete inactive sessions from database")]
+    DeleteSessionsFailed(#[from] tower_sessions::session_store::Error),
 }

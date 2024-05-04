@@ -6,13 +6,12 @@ use sqlx::{
     postgres::{PgPool, PgPoolOptions},
 };
 
-
 use crate::Error;
 
 static MIGRATOR: Migrator = sqlx::migrate!();
 
 #[derive(Debug, Clone)]
-pub struct Database(PgPool);
+pub struct Database(pub PgPool);
 
 impl Deref for Database {
     type Target = PgPool;

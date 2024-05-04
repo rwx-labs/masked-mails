@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 axum = "0.7.5"
+axum-login = "0.15.1"
 clap = { version = "4.5.4", features = ["derive", "env"] }
 miette = { version = "7.2.0", features = ["fancy"] }
+openidconnect = "3.5.0"
 opentelemetry = "0.22.0"
 opentelemetry-otlp = "0.15.0"
 opentelemetry-semantic-conventions = "0.14.0"
@@ -16,9 +18,12 @@ opentelemetry_sdk = { version = "0.22.1", features = ["rt-tokio"] }
 serde = { version = "1.0.199", features = ["derive"] }
 sqlx = { version = "0.7.4", features = ["postgres", "runtime-tokio"] }
 thiserror = "1.0.59"
+time = "0.3.36"
 tokio = { version = "1.37.0", features = ["full"] }
 tower = "0.4.13"
 tower-http = { version = "0.5.2", features = ["fs", "trace", "compression-full"] }
+tower-sessions = "0.12.2"
+tower-sessions-sqlx-store = { version = "0.12.0", features = ["postgres"] }
 tracing = "0.1.40"
 tracing-opentelemetry = { version = "0.23.0", features = ["thiserror"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
