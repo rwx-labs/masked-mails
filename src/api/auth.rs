@@ -1,5 +1,6 @@
 use axum::{routing::get, Router};
 
+pub const NEXT_URL_KEY: &str = "auth.next-url";
 pub const CSRF_STATE_KEY: &str = "auth.csrf-state";
 pub const NONCE_KEY: &str = "auth.nonce";
 
@@ -26,14 +27,24 @@ mod handlers {
     use crate::auth::AuthSession;
 
     #[derive(Debug, Deserialize)]
-    #[allow(dead_code)]
     pub struct AuthResponse {
         code: String,
         state: CsrfToken,
     }
 
+    // This allows us to extract the "next" field from the query string. We use this
+    // to redirect after log in.
+    #[derive(Debug, Deserialize)]
+    pub struct NextUrl {
+        next: Option<String>,
+    }
+
     #[instrument(skip_all)]
-    pub(super) async fn login(auth_session: AuthSession, session: Session) -> impl IntoResponse {
+    pub(super) async fn login(
+        auth_session: AuthSession,
+        session: Session,
+        Query(NextUrl { next }): Query<NextUrl>,
+    ) -> impl IntoResponse {
         trace!("creating authorize url");
         let (auth_url, csrf_state, nonce) = auth_session.backend.authorize_url();
 
@@ -48,6 +59,16 @@ mod handlers {
             .insert(super::NONCE_KEY, nonce.secret())
             .await
             .expect("unable to serialize");
+
+        match next {
+            Some(ref next) if next.starts_with('/') => {
+                session
+                    .insert(super::NEXT_URL_KEY, next)
+                    .await
+                    .expect("unable to serialize");
+            }
+            _ => {}
+        }
 
         Redirect::to(auth_url.as_str())
     }
@@ -107,6 +128,10 @@ mod handlers {
             return (StatusCode::INTERNAL_SERVER_ERROR, "login failed").into_response();
         }
 
-        Redirect::to("/api/auth/userinfo").into_response()
+        if let Ok(Some(url)) = session.remove::<String>(super::NEXT_URL_KEY).await {
+            Redirect::to(&url).into_response()
+        } else {
+            Redirect::to("/").into_response()
+        }
     }
 }
