@@ -63,7 +63,7 @@ pub async fn start_server(db: Database, authenticator: Authenticator) -> miette:
 
     // Set up the session layer
     debug!("creating session store");
-    let session_store = PostgresStore::new(db.clone().0);
+    let session_store = PostgresStore::new(db.clone());
     debug!("migrating session store");
     session_store.migrate().await.into_diagnostic()?;
 

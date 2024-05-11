@@ -24,7 +24,7 @@ pub type AuthSession = axum_login::AuthSession<Authenticator>;
 
 #[derive(Clone, Serialize, Deserialize, FromRow)]
 pub struct User {
-    id: i32,
+    pub id: i32,
     pub email: String,
     pub access_token: String,
 }
@@ -182,17 +182,17 @@ impl AuthnBackend for Authenticator {
 
         // Persist user in our database so we can use `get_user`.
         let user = sqlx::query_as(
-            r#"
+            r"
             insert into users (email, access_token)
             values ($1, $2)
             on conflict(email) do update
             set access_token = excluded.access_token
             returning *
-            "#,
+            ",
         )
         .bind(email)
         .bind(access_token)
-        .fetch_one(&*self.db)
+        .fetch_one(&self.db)
         .await
         .map_err(Self::Error::Sqlx)?;
 
@@ -204,7 +204,7 @@ impl AuthnBackend for Authenticator {
     async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
         Ok(sqlx::query_as("select * from users where id = $1")
             .bind(user_id)
-            .fetch_optional(&*self.db)
+            .fetch_optional(&self.db)
             .await
             .map_err(Self::Error::Sqlx)?)
     }
