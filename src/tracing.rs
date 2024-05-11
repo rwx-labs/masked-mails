@@ -10,6 +10,7 @@ use opentelemetry_semantic_conventions::{
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use crate::cli::Format;
 use crate::config;
 
 // Create a Resource that captures information about the entity for which telemetry is recorded.
@@ -23,7 +24,7 @@ fn resource() -> Resource {
     )
 }
 
-pub fn init(tracing: &config::TracingConfig) -> miette::Result<()> {
+pub fn init(stdout_format: Format, tracing: &config::TracingConfig) -> miette::Result<()> {
     // Create a tracing layer with the configured tracer
     let telemetry_layer = if tracing.enabled {
         let tracer = opentelemetry_otlp::new_pipeline()
@@ -43,19 +44,18 @@ pub fn init(tracing: &config::TracingConfig) -> miette::Result<()> {
     };
 
     // initialize tracing
-    tracing_subscriber::registry()
+    let base = tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "masked_mails=debug,tower_http=debug".into()),
         )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .json()
-                .with_current_span(false)
-                .with_span_list(false),
-        )
-        .with(telemetry_layer)
-        .init();
+        .with(telemetry_layer);
+
+    match stdout_format {
+        Format::Json => base.with(tracing_subscriber::fmt::layer().json()).init(),
+        Format::Pretty => base.with(tracing_subscriber::fmt::layer().pretty()).init(),
+        Format::Compact => base.with(tracing_subscriber::fmt::layer().compact()).init(),
+    };
 
     info!("tracing initialized");
 
