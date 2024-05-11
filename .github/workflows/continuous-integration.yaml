@@ -14,6 +14,20 @@ permissions:
   checks: write
 
 jobs:
+  lint:
+    name: Lint SQL
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v4
+    - uses: yu-iskw/action-sqlfluff@2b313f10cc5db392bed833c57b7bac89775b2597 # v3.7.0
+      with:
+        github_token: ${{ secrets.github_token }}
+        reporter: github-pr-review
+        sqlfluff_command: "lint"
+        config: "${{ github.workspace }}/migrations/.sqlfluff"
+        paths: '${{ github.workspace }}/migrations'
+
   check:
     name: Check
     runs-on: ubuntu-latest
