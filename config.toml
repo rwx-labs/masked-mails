@@ -11,3 +11,6 @@ redirect_url = "http://localhost:3000/api/auth/callback"
 
 [ingestion]
 api_token = "hello-world"
+
+[tracing]
+enabled = true

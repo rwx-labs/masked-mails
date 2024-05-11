@@ -5,10 +5,12 @@ use url::Url;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
-    #[serde(rename = "database")]
-    pub database_config: DbConfig,
+    /// Database configuration
+    pub database: DbConfig,
     /// Authentication configuration
     pub auth: AuthConfig,
+    /// Tracing configuration
+    pub tracing: TracingConfig,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -33,6 +35,12 @@ pub struct DbConfig {
     /// Maximum idle duration for individual connections, in seconds
     #[serde(default = "default_db_idle_timeout", with = "humantime_serde")]
     pub idle_timeout: Duration,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TracingConfig {
+    /// Enable tracing
+    pub enabled: bool,
 }
 
 pub const fn default_max_db_connections() -> usize {
