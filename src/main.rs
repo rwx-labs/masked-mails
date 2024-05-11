@@ -91,7 +91,7 @@ async fn main() -> miette::Result<()> {
     .await?;
     debug!("finished configuration authenticator");
 
-    http::start_server(db.clone(), authenticator).await?;
+    http::start_server(db.clone(), authenticator, opts.ingress_api_token).await?;
 
     Ok(())
 }

@@ -1,4 +1,10 @@
-use axum::{routing::get, Router};
+use axum::{
+    async_trait,
+    extract::FromRequestParts,
+    http::{header::AUTHORIZATION, request::Parts, StatusCode},
+    routing::{get, post},
+    Router,
+};
 use axum_login::login_required;
 
 use crate::auth::Authenticator;
@@ -8,7 +14,7 @@ mod domain;
 
 pub fn router() -> Router<crate::http::AppState> {
     Router::new()
-        // These routes requires login
+        // These routes require login
         .route(
             "/addresses",
             get(handlers::list_addresses).post(handlers::create_address),
@@ -24,20 +30,51 @@ pub fn router() -> Router<crate::http::AppState> {
         ))
         .route("/domains", get(handlers::list_domains))
         .route("/domains/:id", get(handlers::get_domain))
+        // The ingress route implements its own auth check
+        .route("/ingress", post(handlers::ingress))
+}
+
+struct ExtractAuthToken(String);
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ExtractAuthToken
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(auth) = parts.headers.get(AUTHORIZATION) {
+            let value = auth.as_bytes();
+
+            if value.starts_with(b"Token ") {
+                let token = String::from_utf8_lossy(&value[6..]);
+
+                Ok(ExtractAuthToken(token.into_owned()))
+            } else {
+                Err((StatusCode::BAD_REQUEST, "invalid authorization scheme"))
+            }
+        } else {
+            Err((StatusCode::BAD_REQUEST, "authorization token is missing"))
+        }
+    }
 }
 
 mod handlers {
+    use std::collections::HashMap;
+
     use axum::{
         extract::{Json, Path, State},
         http::StatusCode,
         response::IntoResponse,
     };
+    use mail_parser::MessageParser;
     use serde::Deserialize;
-    use tracing::{error, instrument};
+    use tracing::{debug, error, instrument};
 
     use crate::{auth::AuthSession, http::AppState};
 
-    use super::{address, domain};
+    use super::{address, domain, ExtractAuthToken};
 
     #[derive(Clone, Deserialize, Debug)]
     pub struct CreateAddressRequest {
@@ -159,6 +196,51 @@ mod handlers {
             Ok(None) => (StatusCode::NOT_FOUND).into_response(),
             Err(err) => {
                 error!(?err, %domain_id, "could not fetch domain");
+
+                (StatusCode::INTERNAL_SERVER_ERROR).into_response()
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    pub struct IngressMail {
+        pub from: String,
+        pub to: String,
+        pub raw: String,
+        pub raw_size: usize,
+        pub headers: HashMap<String, String>,
+    }
+
+    #[instrument]
+    pub(super) async fn ingress(
+        State(AppState {
+            database,
+            ingress_api_token,
+            ..
+        }): State<AppState>,
+        ExtractAuthToken(token): ExtractAuthToken,
+        Json(IngressMail {
+            from,
+            to,
+            raw,
+            raw_size,
+            headers,
+        }): Json<IngressMail>,
+    ) -> impl IntoResponse {
+        if token != ingress_api_token {
+            return (StatusCode::UNAUTHORIZED, "invalid authorization token").into_response();
+        }
+
+        debug!(%raw, %raw_size, %to, %from, "received email");
+
+        match MessageParser::default().parse(&raw) {
+            Some(_parsed) => {
+                debug!("parsed email");
+
+                ().into_response()
+            }
+            None => {
+                error!("could not parse email");
 
                 (StatusCode::INTERNAL_SERVER_ERROR).into_response()
             }

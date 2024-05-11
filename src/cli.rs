@@ -23,4 +23,7 @@ pub struct Opts {
     /// OAuth Redirect URL
     #[arg(long, env = "AUTH_REDIRECT_URL")]
     pub auth_redirect_url: Url,
+    /// The API token for the ingress endpoint
+    #[arg(long, env = "INGRESS_API_TOKEN")]
+    pub ingress_api_token: String,
 }

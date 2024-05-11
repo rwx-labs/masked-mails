@@ -21,6 +21,8 @@ pub(crate) struct AppState {
     pub authenticator: Authenticator,
     pub session_store: PostgresStore,
     pub database: Database,
+    /// The API token for the ingress endpoint.
+    pub ingress_api_token: String,
 }
 
 #[instrument]
@@ -55,7 +57,11 @@ async fn shutdown_signal(deletion_task_abort_handle: AbortHandle) {
 }
 
 #[instrument(skip_all)]
-pub async fn start_server(db: Database, authenticator: Authenticator) -> miette::Result<()> {
+pub async fn start_server(
+    db: Database,
+    authenticator: Authenticator,
+    ingress_api_token: String,
+) -> miette::Result<()> {
     debug!("starting http server");
 
     let auth_router = api::auth::router();
@@ -71,6 +77,7 @@ pub async fn start_server(db: Database, authenticator: Authenticator) -> miette:
         authenticator: authenticator.clone(),
         session_store: session_store.clone(),
         database: db.clone(),
+        ingress_api_token,
     };
 
     let deletion_task = tokio::task::spawn(
