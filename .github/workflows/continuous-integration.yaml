@@ -45,6 +45,4 @@ jobs:
     - name: Run Clippy check
       uses: clechasseur/rs-clippy-check@6489db34e7d7a162364f8ee3d7ad2cd1060dc1d7 # v3.0.3
       with:
-        token: ${{ github.token }}
         args: --all-features
-        name: clippy ${{ matrix.rust }}
