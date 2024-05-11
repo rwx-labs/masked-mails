@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use axum::{extract::FromRef, http::StatusCode, response::IntoResponse, Router};
-use axum_login::{login_required, AuthManagerLayerBuilder};
+use axum_login::AuthManagerLayerBuilder;
 use miette::IntoDiagnostic as _;
 use time::Duration;
 use tokio::{signal, task::AbortHandle};
@@ -63,7 +63,7 @@ pub async fn start_server(db: Database, authenticator: Authenticator) -> miette:
 
     // Set up the session layer
     debug!("creating session store");
-    let session_store = PostgresStore::new(db.clone().0);
+    let session_store = PostgresStore::new(db.clone());
     debug!("migrating session store");
     session_store.migrate().await.into_diagnostic()?;
 
@@ -89,10 +89,6 @@ pub async fn start_server(db: Database, authenticator: Authenticator) -> miette:
     let app = Router::new()
         .fallback(not_found)
         .nest("/api/v1", api_v1_router)
-        .route_layer(login_required!(
-            Authenticator,
-            login_url = "/api/auth/login"
-        ))
         .nest("/api/auth", auth_router)
         .with_state(app_state)
         .layer(auth_layer)

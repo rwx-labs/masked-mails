@@ -20,4 +20,8 @@ pub enum Error {
     HttpBindFailed(#[source] io::Error),
     #[error("Could not discover openid client information")]
     DiscoverOidcFailed,
+    #[error("sql error")]
+    Sqlx(#[source] sqlx::Error),
+    #[error("addresses kept colliding when trying to generate unique address")]
+    NameCollisionLimit,
 }

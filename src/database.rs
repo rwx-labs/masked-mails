@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::time::Duration;
 
 use sqlx::{
@@ -10,16 +9,7 @@ use crate::Error;
 
 static MIGRATOR: Migrator = sqlx::migrate!();
 
-#[derive(Debug, Clone)]
-pub struct Database(pub PgPool);
-
-impl Deref for Database {
-    type Target = PgPool;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+pub type Database = PgPool;
 
 pub async fn connect(url: &str) -> Result<Database, Error> {
     let pool = PgPoolOptions::new()
@@ -27,8 +17,7 @@ pub async fn connect(url: &str) -> Result<Database, Error> {
         .idle_timeout(Duration::from_secs(30))
         .connect(url)
         .await
-        .map_err(Error::DatabaseOpenError)
-        .map(Database)?;
+        .map_err(Error::DatabaseOpenError)?;
 
     Ok(pool)
 }

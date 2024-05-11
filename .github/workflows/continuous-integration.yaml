@@ -20,13 +20,18 @@ jobs:
     steps:
     - name: Checkout source code
       uses: actions/checkout@v4
-    - uses: yu-iskw/action-sqlfluff@2b313f10cc5db392bed833c57b7bac89775b2597 # v3.7.0
+    - uses: actions/setup-python@v5
       with:
-        github_token: ${{ secrets.github_token }}
-        reporter: github-pr-review
-        sqlfluff_command: "lint"
-        config: "${{ github.workspace }}/migrations/.sqlfluff"
-        paths: '${{ github.workspace }}/migrations'
+        python-version: '3.12'
+    - name: Install sqlfluff
+      run: pip install sqlfluff
+    - name: Run sqlfluff lint
+      run: |
+        sqlfluff lint \
+          --dialect=postgres \
+          --nocolor \
+          --disable-progress-bar \
+          --format=github-annotation-native
 
   check:
     name: Check
