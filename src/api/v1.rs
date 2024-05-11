@@ -1,9 +1,14 @@
 use axum::{routing::get, Router};
+use axum_login::login_required;
+
+use crate::auth::Authenticator;
 
 mod address;
+mod domain;
 
 pub fn router() -> Router<crate::http::AppState> {
     Router::new()
+        // These routes requires login
         .route(
             "/addresses",
             get(handlers::list_addresses).post(handlers::create_address),
@@ -12,6 +17,13 @@ pub fn router() -> Router<crate::http::AppState> {
             "/addresses/:id",
             get(handlers::get_address).delete(handlers::delete_address),
         )
+        // The routes following this layer do not require login
+        .route_layer(login_required!(
+            Authenticator,
+            login_url = "/api/auth/login"
+        ))
+        .route("/domains", get(handlers::list_domains))
+        .route("/domains/:id", get(handlers::get_domain))
 }
 
 mod handlers {
@@ -25,7 +37,7 @@ mod handlers {
 
     use crate::{auth::AuthSession, http::AppState};
 
-    use super::address;
+    use super::{address, domain};
 
     #[derive(Clone, Deserialize, Debug)]
     pub struct CreateAddressRequest {
@@ -120,6 +132,36 @@ mod handlers {
                 }
             }
             None => (StatusCode::UNAUTHORIZED).into_response(),
+        }
+    }
+
+    #[instrument]
+    pub(super) async fn list_domains(
+        State(AppState { database, .. }): State<AppState>,
+    ) -> impl IntoResponse {
+        match domain::get_domains(&database).await {
+            Ok(domains) => (StatusCode::OK, Json(domains)).into_response(),
+            Err(err) => {
+                error!(?err, "could not fetch list of domains");
+
+                (StatusCode::INTERNAL_SERVER_ERROR).into_response()
+            }
+        }
+    }
+
+    #[instrument]
+    pub(super) async fn get_domain(
+        Path(domain_id): Path<i32>,
+        State(AppState { database, .. }): State<AppState>,
+    ) -> impl IntoResponse {
+        match domain::get_domain(domain_id, &database).await {
+            Ok(Some(domain)) => (StatusCode::OK, Json(domain)).into_response(),
+            Ok(None) => (StatusCode::NOT_FOUND).into_response(),
+            Err(err) => {
+                error!(?err, %domain_id, "could not fetch domain");
+
+                (StatusCode::INTERNAL_SERVER_ERROR).into_response()
+            }
         }
     }
 }
