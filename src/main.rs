@@ -82,6 +82,7 @@ async fn main() -> miette::Result<()> {
 
     debug!("configuring authenticator");
     let authenticator = Authenticator::discover(
+        db.clone(),
         opts.auth_issuer_url,
         opts.auth_client_id,
         opts.auth_client_secret,

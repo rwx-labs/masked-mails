@@ -1,6 +1,8 @@
 use std::net::SocketAddr;
 
 use axum::{extract::FromRef, http::StatusCode, response::IntoResponse, Router};
+use axum_login::{login_required, AuthManagerLayerBuilder};
+use miette::IntoDiagnostic as _;
 use time::Duration;
 use tokio::{signal, task::AbortHandle};
 use tower_http::{
@@ -12,7 +14,6 @@ use tower_sessions_sqlx_store::PostgresStore;
 use tracing::{debug, instrument};
 
 use crate::Database;
-use crate::Error;
 use crate::{api, auth::Authenticator};
 
 #[derive(Clone, FromRef)]
@@ -50,22 +51,24 @@ async fn shutdown_signal(deletion_task_abort_handle: AbortHandle) {
         () = terminate => { deletion_task_abort_handle.abort() },
     }
 
-    println!("signal received, starting graceful shutdown");
+    println!("signal received, gracefully shutting down");
 }
 
 #[instrument(skip_all)]
-pub async fn start_server(db: Database, authenticator: Authenticator) -> miette::Result<(), Error> {
+pub async fn start_server(db: Database, authenticator: Authenticator) -> miette::Result<()> {
     debug!("starting http server");
 
     let auth_router = api::auth::router();
     let api_v1_router = api::v1::router();
 
     // Set up the session layer
+    debug!("creating session store");
     let session_store = PostgresStore::new(db.clone().0);
-    session_store.migrate().await?;
+    debug!("migrating session store");
+    session_store.migrate().await.into_diagnostic()?;
 
     let app_state = AppState {
-        authenticator,
+        authenticator: authenticator.clone(),
         session_store: session_store.clone(),
         database: db.clone(),
     };
@@ -73,32 +76,42 @@ pub async fn start_server(db: Database, authenticator: Authenticator) -> miette:
     let deletion_task = tokio::task::spawn(
         session_store
             .clone()
-            .continuously_delete_expired(tokio::time::Duration::from_secs(60)),
+            .continuously_delete_expired(tokio::time::Duration::from_secs(360)),
     );
 
-    let session_layer = SessionManagerLayer::new(session_store)
+    let session_layer = SessionManagerLayer::new(session_store.clone())
         .with_secure(false)
-        .with_expiry(Expiry::OnInactivity(Duration::seconds(10)));
+        .with_same_site(tower_sessions::cookie::SameSite::Lax)
+        .with_expiry(Expiry::OnInactivity(Duration::seconds(360)));
+
+    let auth_layer = AuthManagerLayerBuilder::new(authenticator, session_layer).build();
 
     let app = Router::new()
         .fallback(not_found)
+        .nest("/api/v1", api_v1_router)
+        .route_layer(login_required!(
+            Authenticator,
+            login_url = "/api/auth/login"
+        ))
         .nest("/api/auth", auth_router)
         .with_state(app_state)
-        .nest("/api/v1", api_v1_router)
-        .layer(session_layer)
+        .layer(auth_layer)
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new().quality(CompressionLevel::Fastest));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
 
     debug!("binding to {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .into_diagnostic()?;
     debug!("listening on {}", addr);
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(shutdown_signal(deletion_task.abort_handle()))
-        .await?;
+        .await
+        .into_diagnostic()?;
 
-    deletion_task.await.unwrap()?;
+    deletion_task.await.into_diagnostic()?.into_diagnostic()?;
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 use axum::{routing::get, Router};
 
-pub fn router() -> Router {
+pub fn router() -> Router<crate::http::AppState> {
     Router::new()
         .route(
             "/addresses",
