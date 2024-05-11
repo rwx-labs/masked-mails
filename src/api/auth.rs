@@ -1,33 +1,112 @@
 use axum::{routing::get, Router};
 
+pub const CSRF_STATE_KEY: &str = "auth.csrf-state";
+pub const NONCE_KEY: &str = "auth.nonce";
+
 pub fn router() -> Router<crate::http::AppState> {
     Router::new()
-        .route("/callback", get(handlers::callback))
         .route("/login", get(handlers::login))
+        .route("/logout", get(handlers::logout))
+        .route("/callback", get(handlers::callback))
+        .route("/userinfo", get(handlers::userinfo))
 }
 
 mod handlers {
     use axum::{
-        extract::State,
+        extract::Query,
         http::StatusCode,
         response::{IntoResponse, Redirect},
     };
-    use tracing::instrument;
+    use openidconnect::CsrfToken;
+    use serde::Deserialize;
+    use tower_sessions::Session;
 
-    use crate::auth::Authenticator;
+    use tracing::{debug, error, instrument, trace};
 
-    #[instrument]
-    pub(super) async fn callback() -> (StatusCode, String) {
-        (
-            StatusCode::NOT_IMPLEMENTED,
-            "not yet implemented".to_string(),
-        )
+    use crate::auth::AuthSession;
+
+    #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
+    pub struct AuthResponse {
+        code: String,
+        state: CsrfToken,
     }
 
-    #[instrument(skip(auth))]
-    pub(super) async fn login(State(auth): State<Authenticator>) -> impl IntoResponse {
-        let auth_url = auth.login_redirect_url().await;
+    #[instrument(skip_all)]
+    pub(super) async fn login(auth_session: AuthSession, session: Session) -> impl IntoResponse {
+        trace!("creating authorize url");
+        let (auth_url, csrf_state, nonce) = auth_session.backend.authorize_url();
+
+        trace!("setting auth session state");
+
+        session
+            .insert(super::CSRF_STATE_KEY, csrf_state.secret())
+            .await
+            .expect("unable to serialize");
+
+        session
+            .insert(super::NONCE_KEY, nonce.secret())
+            .await
+            .expect("unable to serialize");
 
         Redirect::to(auth_url.as_str())
+    }
+
+    #[instrument(skip_all)]
+    pub(super) async fn logout(mut auth_session: AuthSession) -> impl IntoResponse {
+        match auth_session.logout().await {
+            Ok(_) => Redirect::to("/").into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    }
+
+    #[instrument(skip_all)]
+    pub async fn userinfo(auth_session: AuthSession) -> impl IntoResponse {
+        match auth_session.user {
+            Some(user) => format!("{user:?}").into_response(),
+            None => (StatusCode::INTERNAL_SERVER_ERROR, "no user").into_response(),
+        }
+    }
+
+    #[instrument(skip_all)]
+    pub async fn callback(
+        mut auth_session: AuthSession,
+        session: Session,
+        Query(AuthResponse {
+            state: new_state,
+            code,
+        }): Query<AuthResponse>,
+    ) -> impl IntoResponse {
+        let Ok(Some(old_state)) = session.get::<CsrfToken>(super::CSRF_STATE_KEY).await else {
+            return (StatusCode::BAD_REQUEST, "missing csrf state").into_response();
+        };
+
+        let Ok(Some(nonce)) = session.get(super::NONCE_KEY).await else {
+            return (StatusCode::BAD_REQUEST, "missing nonce").into_response();
+        };
+
+        debug!(old_state = %old_state.secret(), new_state = %new_state.secret(), "states");
+
+        let creds = crate::auth::Credentials {
+            code,
+            nonce,
+            old_state,
+            new_state,
+        };
+
+        let user = match auth_session.authenticate(creds).await {
+            Ok(Some(user)) => user,
+            Ok(None) => return (StatusCode::UNAUTHORIZED, "invalid csrf state").into_response(),
+            Err(err) => {
+                error!(?err, "could not authenticate user");
+                return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response();
+            }
+        };
+
+        if auth_session.login(&user).await.is_err() {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "login failed").into_response();
+        }
+
+        Redirect::to("/api/auth/userinfo").into_response()
     }
 }
