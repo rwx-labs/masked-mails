@@ -1,15 +1,11 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use argh::FromArgs;
 
-/// Simple program to greet a person
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+/// Masked mails server
+#[derive(FromArgs, Debug)]
 pub struct Opts {
-    /// Enable tracing
-    #[arg(long, env = "ENABLE_TRACING", default_value = "false")]
-    pub tracing: bool,
-    /// The path to the config file
-    #[arg(long, default_value = "config.toml")]
+    /// the path to the config file
+    #[argh(option, short = 'c', default = "PathBuf::from(\"config.toml\")")]
     pub config_path: PathBuf,
 }

@@ -1,5 +1,4 @@
 use ::tracing::debug;
-use clap::Parser;
 use figment::{
     providers::{Env, Format, Toml},
     Figment,
@@ -23,7 +22,7 @@ use crate::auth::Authenticator;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
-    let opts = cli::Opts::parse();
+    let opts: cli::Opts = argh::from_env();
     let config: Config = Figment::new()
         .merge(Toml::file(opts.config_path))
         .merge(Env::prefixed("MM_").lowercase(false).split("__"))

@@ -7,6 +7,7 @@ use opentelemetry_semantic_conventions::{
     resource::{SERVICE_NAME, SERVICE_VERSION},
     SCHEMA_URL,
 };
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config;
@@ -55,5 +56,8 @@ pub fn init(tracing: &config::TracingConfig) -> miette::Result<()> {
         )
         .with(telemetry_layer)
         .init();
+
+    info!("tracing initialized");
+
     Ok(())
 }
