@@ -8,13 +8,15 @@ use sqlx::{
 use crate::Error;
 
 static MIGRATOR: Migrator = sqlx::migrate!();
+pub const DEFAULT_MAX_CONNECTIONS: usize = 5;
+pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub type Database = PgPool;
 
-pub async fn connect(url: &str) -> Result<Database, Error> {
+pub async fn connect(url: &str, config: &crate::config::DbConfig) -> Result<Database, Error> {
     let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .idle_timeout(Duration::from_secs(30))
+        .max_connections(config.max_connections as u32)
+        .idle_timeout(config.idle_timeout)
         .connect(url)
         .await
         .map_err(Error::DatabaseOpenError)?;

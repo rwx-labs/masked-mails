@@ -14,13 +14,14 @@ use tower_sessions_sqlx_store::PostgresStore;
 use tracing::{debug, instrument};
 
 use crate::Database;
-use crate::{api, auth::Authenticator};
+use crate::{api, auth::Authenticator, Config};
 
 #[derive(Clone, FromRef)]
 pub(crate) struct AppState {
     pub authenticator: Authenticator,
     pub session_store: PostgresStore,
     pub database: Database,
+    pub config: Config,
 }
 
 #[instrument]
@@ -55,7 +56,11 @@ async fn shutdown_signal(deletion_task_abort_handle: AbortHandle) {
 }
 
 #[instrument(skip_all)]
-pub async fn start_server(db: Database, authenticator: Authenticator) -> miette::Result<()> {
+pub async fn start_server(
+    db: Database,
+    authenticator: Authenticator,
+    config: Config,
+) -> miette::Result<()> {
     debug!("starting http server");
 
     let auth_router = api::auth::router();
@@ -71,6 +76,7 @@ pub async fn start_server(db: Database, authenticator: Authenticator) -> miette:
         authenticator: authenticator.clone(),
         session_store: session_store.clone(),
         database: db.clone(),
+        config,
     };
 
     let deletion_task = tokio::task::spawn(

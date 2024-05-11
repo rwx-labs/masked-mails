@@ -1,4 +1,9 @@
 use clap::Parser;
+use figment::{
+    providers::{Env, Format, Toml},
+    Figment,
+};
+use miette::IntoDiagnostic;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::{
     trace::{BatchConfig, RandomIdGenerator},
@@ -15,10 +20,12 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod api;
 mod auth;
 mod cli;
+mod config;
 mod database;
 mod error;
 mod http;
 
+pub use config::Config;
 pub use database::Database;
 pub use error::Error;
 
@@ -38,6 +45,11 @@ fn resource() -> Resource {
 #[tokio::main]
 async fn main() -> miette::Result<()> {
     let opts = cli::Opts::parse();
+    let config: Config = Figment::new()
+        .merge(Toml::file(opts.config_path))
+        .merge(Env::prefixed("MM_").lowercase(false).split("__"))
+        .extract()
+        .into_diagnostic()?;
 
     // Create a tracing layer with the configured tracer
     let telemetry_layer = if opts.tracing {
@@ -73,7 +85,8 @@ async fn main() -> miette::Result<()> {
         .init();
 
     debug!("connecting to database");
-    let db = database::connect(opts.database_url.as_str()).await?;
+    let db =
+        database::connect(config.database_config.url.as_str(), &config.database_config).await?;
     debug!("connected to database");
 
     debug!("running database migrations");
@@ -83,15 +96,15 @@ async fn main() -> miette::Result<()> {
     debug!("configuring authenticator");
     let authenticator = Authenticator::discover(
         db.clone(),
-        opts.auth_issuer_url,
-        opts.auth_client_id,
-        opts.auth_client_secret,
-        opts.auth_redirect_url,
+        config.auth.issuer_url.clone(),
+        config.auth.client_id.clone(),
+        config.auth.client_secret.clone(),
+        config.auth.redirect_url.clone(),
     )
     .await?;
     debug!("finished configuration authenticator");
 
-    http::start_server(db.clone(), authenticator).await?;
+    http::start_server(db.clone(), authenticator, config).await?;
 
     Ok(())
 }
