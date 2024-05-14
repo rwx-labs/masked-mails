@@ -1,0 +1,16 @@
+[database]
+url = "postgresql://user@localhost:5432/masked_mails_development"
+max_connections = 5
+idle_timeout = "30s"
+
+[auth]
+issuer_url = "https://rwx-prod.eu.auth0.com/"
+client_id = "hXfLORGzpKPJbnr5qYUG0nu4LXGJLhdq"
+client_secret = "redacted"
+redirect_url = "http://localhost:3000/api/auth/callback"
+
+[ingestion]
+api_token = "hello-world"
+
+[tracing]
+enabled = true
