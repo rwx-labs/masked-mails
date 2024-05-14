@@ -11,6 +11,8 @@ pub struct Config {
     pub auth: AuthConfig,
     /// Tracing configuration
     pub tracing: TracingConfig,
+    /// Ingestion configuration
+    pub ingestion: IngestionConfig,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -35,6 +37,12 @@ pub struct DbConfig {
     /// Maximum idle duration for individual connections, in seconds
     #[serde(default = "default_db_idle_timeout", with = "humantime_serde")]
     pub idle_timeout: Duration,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct IngestionConfig {
+    /// The API token for ingestion
+    pub api_token: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

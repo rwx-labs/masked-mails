@@ -10,8 +10,10 @@ argh = "0.1.12"
 async-trait = "0.1.80"
 axum = { version = "0.7.5", features = ["macros"] }
 axum-login = "0.15.1"
+base64 = "0.22.1"
 figment = { version = "0.10.18", features = ["toml", "env"] }
 humantime-serde = "1.1.1"
+mail-parser = "0.9.3"
 miette = { version = "7.2.0", features = ["fancy"] }
 openidconnect = { version = "3.5.0", features = ["accept-rfc3339-timestamps"] }
 opentelemetry = "0.22.0"
@@ -20,6 +22,7 @@ opentelemetry-semantic-conventions = "0.14.0"
 opentelemetry_sdk = { version = "0.22.1", features = ["rt-tokio"] }
 rand = "0.8.5"
 serde = { version = "1.0.199", features = ["derive"] }
+serde_json = "1.0.117"
 sqlx = { version = "0.7.4", features = ["postgres", "runtime-tokio", "time"] }
 thiserror = "1.0.59"
 time = { version = "0.3.36", features = ["serde-human-readable"] }
