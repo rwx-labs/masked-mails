@@ -1,4 +1,10 @@
-use axum::{routing::get, Router};
+use axum::{
+    async_trait,
+    extract::FromRequestParts,
+    http::{header::AUTHORIZATION, request::Parts, StatusCode},
+    routing::{get, post},
+    Router,
+};
 use axum_login::login_required;
 
 use crate::auth::Authenticator;
@@ -8,7 +14,7 @@ mod domain;
 
 pub fn router() -> Router<crate::http::AppState> {
     Router::new()
-        // These routes requires login
+        // These routes require login
         .route(
             "/addresses",
             get(handlers::list_addresses).post(handlers::create_address),
@@ -24,20 +30,52 @@ pub fn router() -> Router<crate::http::AppState> {
         ))
         .route("/domains", get(handlers::list_domains))
         .route("/domains/:id", get(handlers::get_domain))
+        // The ingress route implements its own auth check
+        .route("/ingestion", post(handlers::ingest))
+}
+
+struct ExtractAuthToken(String);
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ExtractAuthToken
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        if let Some(auth) = parts.headers.get(AUTHORIZATION) {
+            let value = auth.as_bytes();
+
+            if value.starts_with(b"Token ") {
+                let token = String::from_utf8_lossy(&value[6..]);
+
+                Ok(ExtractAuthToken(token.into_owned()))
+            } else {
+                Err((StatusCode::BAD_REQUEST, "invalid authorization scheme"))
+            }
+        } else {
+            Err((StatusCode::BAD_REQUEST, "authorization token is missing"))
+        }
+    }
 }
 
 mod handlers {
+    use std::collections::HashMap;
+
     use axum::{
         extract::{Json, Path, State},
         http::StatusCode,
         response::IntoResponse,
     };
+    use base64::prelude::{Engine, BASE64_STANDARD};
+    use mail_parser::MessageParser;
     use serde::Deserialize;
-    use tracing::{error, instrument};
+    use tracing::{debug, error, instrument};
 
     use crate::{auth::AuthSession, http::AppState};
 
-    use super::{address, domain};
+    use super::{address, domain, ExtractAuthToken};
 
     #[derive(Clone, Deserialize, Debug)]
     pub struct CreateAddressRequest {
@@ -163,5 +201,83 @@ mod handlers {
                 (StatusCode::INTERNAL_SERVER_ERROR).into_response()
             }
         }
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    pub struct MailMetadata {
+        /// The intended recipient, if known.
+        pub to: Option<String>,
+        /// The sender, if known.
+        pub from: Option<String>,
+        /// E-mail headers, if known.
+        pub headers: HashMap<String, String>,
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    pub struct Mail {
+        /// The raw contents of the e-mail, encoded with base64.
+        pub raw: String,
+        /// The size of the (decoded) raw contents.
+        pub raw_size: usize,
+        /// Information about the e-mail that was known prior to parsing.
+        pub metadata: MailMetadata,
+    }
+
+    #[derive(Debug, Clone, Deserialize)]
+    pub struct MailIngestionRequest {
+        pub mails: Vec<Mail>,
+        pub started_at: String, // FIXME: this should be deserialized to a time
+    }
+
+    #[instrument(skip_all)]
+    pub(super) async fn ingest(
+        State(AppState { config, .. }): State<AppState>,
+        ExtractAuthToken(token): ExtractAuthToken,
+        Json(payload): Json<MailIngestionRequest>,
+    ) -> impl IntoResponse {
+        if token != config.ingestion.api_token {
+            debug!("received ingestion request with invalid token");
+
+            return (StatusCode::UNAUTHORIZED, "invalid authorization token").into_response();
+        }
+
+        let mail_parser = MessageParser::new()
+            .with_mime_headers()
+            .with_date_headers()
+            .with_address_headers()
+            .with_message_ids();
+
+        for mail in &payload.mails {
+            let decoded = match BASE64_STANDARD.decode(&mail.raw) {
+                Ok(data) => data,
+                Err(_) => continue,
+            };
+
+            match mail_parser.parse(&decoded[..]) {
+                Some(parsed) => {
+                    debug!(?parsed, "parsed email");
+                }
+                None => {
+                    error!("could not parse email");
+                }
+            }
+        }
+
+        ().into_response()
+
+        // debug!(%raw, %raw_size, %to, %from, "received email");
+
+        // match MessageParser::default().parse(&raw) {
+        //     Some(_parsed) => {
+        //         debug!("parsed email");
+
+        //         ().into_response()
+        //     }
+        //     None => {
+        //         error!("could not parse email");
+
+        //         (StatusCode::INTERNAL_SERVER_ERROR).into_response()
+        //     }
+        // }
     }
 }
